@@ -20,17 +20,19 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/polynetwork/eth-contracts/go_abi/eccm_abi"
 	"github.com/polynetwork/eth_relayer/config"
 	"github.com/polynetwork/eth_relayer/db"
-	"math/big"
-	"strings"
-	"time"
 
 	"context"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/polynetwork/eth_relayer/log"
 	"github.com/polynetwork/eth_relayer/tools"
@@ -162,6 +164,7 @@ func (this *EthereumManager) MonitorChain() {
 			height, err := tools.GetNodeHeight(this.config.ETHConfig.RestURL, this.restClient)
 			if err != nil {
 				log.Infof("MonitorChain - cannot get node height, err: %s", err)
+				time.Sleep(time.Second * 10)
 				continue
 			}
 			if height-this.currentHeight <= config.ETH_USEFUL_BLOCK_NUM {
@@ -372,6 +375,7 @@ func (this *EthereumManager) MonitorDeposit() {
 			height, err := tools.GetNodeHeight(this.config.ETHConfig.RestURL, this.restClient)
 			if err != nil {
 				log.Infof("MonitorChain - cannot get node height, err: %s", err)
+				time.Sleep(time.Second * 10)
 				continue
 			}
 			snycheight := this.findLastestHeight()
