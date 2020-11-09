@@ -22,6 +22,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"strconv"
+	"strings"
+
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -38,11 +42,8 @@ import (
 	sdk "github.com/polynetwork/poly-go-sdk"
 	"github.com/polynetwork/poly/common"
 	"github.com/polynetwork/poly/common/password"
-	"github.com/polynetwork/poly/consensus/vbft/config"
+	vconfig "github.com/polynetwork/poly/consensus/vbft/config"
 	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
-	"math/rand"
-	"strconv"
-	"strings"
 
 	"math/big"
 	"time"
@@ -132,6 +133,7 @@ func (this *PolyManager) findLatestHeight() uint32 {
 	height, err := instance.GetCurEpochStartHeight(nil)
 	if err != nil {
 		log.Errorf("findLatestHeight - GetLatestHeight failed: %s", err.Error())
+		time.Sleep(time.Second * 10)
 		return 0
 	}
 	return uint32(height)
