@@ -18,6 +18,11 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/polynetwork/eth_relayer/cmd"
 	"github.com/polynetwork/eth_relayer/config"
@@ -26,10 +31,6 @@ import (
 	"github.com/polynetwork/eth_relayer/manager"
 	sdk "github.com/polynetwork/poly-go-sdk"
 	"github.com/urfave/cli"
-	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
 )
 
 var ConfigPath string
