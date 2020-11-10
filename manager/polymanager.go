@@ -377,26 +377,54 @@ type EthSender struct {
 
 func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
-	tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), info.gasLimit, info.gasPrice, info.txData)
-	signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
-	if err != nil {
-		this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-		return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
-	}
-	err = this.ethClient.SendTransaction(context.Background(), signedtx)
-	if err != nil {
-		this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-		return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v", nonce, err)
-	}
-	hash := signedtx.Hash()
 
-	isSuccess := this.waitTransactionConfirm(info.polyTxHash, hash)
-	if isSuccess {
-		log.Infof("successful to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s, eth_explorer: %s)",
+	for {
+		accountNonce, err := this.ethClient.NonceAt(context.Background(), this.acc.Address, nil)
+		if err != nil {
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		if accountNonce >= nonce {
+			return nil
+		}
+		suggestedPrice, err := this.ethClient.SuggestGasPrice(context.Background())
+		if err != nil {
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		price := info.gasPrice
+		if suggestedPrice.Cmp(price) == 1 {
+			price = suggestedPrice
+		}
+		price.Mul(price, big.NewInt(112)) // increase gas price by 12%, miners will reject lower increments
+		price.Div(price, big.NewInt(100))
+		maxPrice := big.NewInt(this.config.ETHConfig.MaxGasPrice)
+		multiplier := big.NewInt(10)
+		multiplier.Exp(multiplier, big.NewInt(9), nil)
+		maxPrice.Mul(maxPrice, multiplier)
+
+		if price.Cmp(maxPrice) == 1 {
+			price = maxPrice
+		}
+
+		info.gasPrice = price
+
+		tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), info.gasLimit, info.gasPrice, info.txData)
+		signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
+		if err != nil {
+			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
+			return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
+		}
+		err = this.ethClient.SendTransaction(context.Background(), signedtx)
+		if err != nil {
+			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
+			return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
+		}
+		hash := signedtx.Hash()
+
+		log.Infof("relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s, eth_explorer: %s)",
 			hash.String(), nonce, info.polyTxHash, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
-	} else {
-		log.Errorf("failed to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s, eth_explorer: %s)",
-			hash.String(), nonce, info.polyTxHash, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
+		time.Sleep(time.Second * 10)
 	}
 	return nil
 }
@@ -492,9 +520,9 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 func (this *EthSender) commitHeader(header *polytypes.Header, pubkList []byte) bool {
 	headerdata := header.GetMessage()
 	var (
-		txData      []byte
-		txErr       error
-		sigs        []byte
+		txData []byte
+		txErr  error
+		sigs   []byte
 	)
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {

@@ -72,6 +72,7 @@ type ETHConfig struct {
 	KeyStorePwdSet      map[string]string
 	BlockConfig         uint64
 	HeadersPerBatch     int
+	MaxGasPrice         int64
 }
 
 type ONTConfig struct {
