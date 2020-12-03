@@ -381,6 +381,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	for {
 		accountNonce, err := this.ethClient.NonceAt(context.Background(), this.acc.Address, nil)
 		if err != nil {
+			log.Errorf("sendTxToEth - get accountNonce error: %v", err)
 			time.Sleep(time.Second * 10)
 			continue
 		}
@@ -389,6 +390,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 		}
 		suggestedPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 		if err != nil {
+			log.Errorf("sendTxToEth - get suggestedGasPrice error: %v", err)
 			time.Sleep(time.Second * 10)
 			continue
 		}
@@ -415,6 +417,8 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
 			return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
 		}
+
+		log.Errorf("sendTxToEth - sending tx")
 		err = this.ethClient.SendTransaction(context.Background(), signedtx)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
