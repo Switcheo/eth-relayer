@@ -387,8 +387,8 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 			time.Sleep(time.Second * 10)
 			continue
 		}
-		if accountNonce >= nonce {
-			log.Errorf("sendTxToEth - accountNonce >= nonce: %d, %d", accountNonce, nonce)
+		if accountNonce > nonce {
+			log.Infof("sendTxToEth - accountNonce >= nonce: %d, %d", accountNonce, nonce)
 			return nil
 		}
 		suggestedPrice, err := this.ethClient.SuggestGasPrice(context.Background())
