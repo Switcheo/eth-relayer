@@ -376,6 +376,8 @@ type EthSender struct {
 }
 
 func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
+	log.Infof("sendTxToEth")
+
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 
 	for {
@@ -386,6 +388,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 			continue
 		}
 		if accountNonce >= nonce {
+			log.Errorf("sendTxToEth - accountNonce >= nonce: %d, %d", accountNonce, nonce)
 			return nil
 		}
 		suggestedPrice, err := this.ethClient.SuggestGasPrice(context.Background())
@@ -434,6 +437,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 }
 
 func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, param *common2.ToMerkleValue, headerProof string, anchorHeader *polytypes.Header, polyTxHash string, rawAuditPath []byte) bool {
+	log.Infof("commitDepositEventsWithHeader")
 	var (
 		sigs       []byte
 		headerData []byte
@@ -463,7 +467,7 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 	copy(fromTx[:], param.TxHash[:32])
 	res, _ := eccd.CheckIfFromChainTxExist(nil, param.FromChainID, fromTx)
 	if res {
-		log.Debugf("already relayed to eth: ( from_chain_id: %d, from_txhash: %x,  param.Txhash: %x)",
+		log.Infof("already relayed to eth: ( from_chain_id: %d, from_txhash: %x,  param.Txhash: %x)",
 			param.FromChainID, param.TxHash, param.MakeTxParam.TxHash)
 		return true
 	}
@@ -483,7 +487,7 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - get suggest sas price failed error: %s", err.Error())
+		log.Errorf("commitDepositEventsWithHeader - get suggest gas price failed error: %s", err.Error())
 		return false
 	}
 	contractaddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCMContractAddress)
