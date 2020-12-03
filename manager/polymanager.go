@@ -421,7 +421,8 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 			return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
 		}
 
-		log.Errorf("sendTxToEth - sending tx")
+		log.Infof("sendTxToEth - sending tx")
+
 		err = this.ethClient.SendTransaction(context.Background(), signedtx)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
