@@ -17,6 +17,7 @@
 package manager
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -24,12 +25,18 @@ import (
 	"strings"
 	"time"
 
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ontio/ontology/smartcontract/service/native/cross_chain/cross_chain_manager"
 	"github.com/polynetwork/eth-contracts/go_abi/eccm_abi"
 	"github.com/polynetwork/eth_relayer/config"
 	"github.com/polynetwork/eth_relayer/db"
+	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
 
 	"context"
 
@@ -155,9 +162,8 @@ func NewEthereumManager(servconfig *config.ServiceConfig, startheight uint64, st
 }
 
 func (this *EthereumManager) MonitorChain() {
-	fetchBlockTicker := time.NewTicker(config.ETH_MONITOR_INTERVAL)
+	fetchBlockTicker := time.NewTicker(time.Duration(this.config.ETHConfig.MonitorInterval) * time.Second)
 	var blockHandleResult bool
-	backtrace := uint64(1)
 	for {
 		select {
 		case <-fetchBlockTicker.C:
@@ -173,6 +179,9 @@ func (this *EthereumManager) MonitorChain() {
 			log.Infof("MonitorChain - eth height is %d", height)
 			blockHandleResult = true
 			for this.currentHeight < height-config.ETH_USEFUL_BLOCK_NUM {
+				if this.currentHeight%10 == 0 {
+					log.Infof("handle confirmed eth Block height: %d", this.currentHeight)
+				}
 				blockHandleResult = this.handleNewBlock(this.currentHeight + 1)
 				if blockHandleResult == false {
 					break
@@ -180,35 +189,14 @@ func (this *EthereumManager) MonitorChain() {
 				this.currentHeight++
 				// try to commit header if more than 50 headers needed to be syned
 				if len(this.header4sync) >= this.config.ETHConfig.HeadersPerBatch {
-					if this.commitHeader() != 0 {
-						log.Errorf("MonitorChain - commit header failed.")
+					if res := this.commitHeader(); res != 0 {
 						blockHandleResult = false
 						break
 					}
-					this.header4sync = make([][]byte, 0)
 				}
 			}
-			if blockHandleResult == false {
-				continue
-			}
-			// try to commit lastest header when we are at latest height
-			commitHeaderResult := this.commitHeader()
-			if commitHeaderResult > 0 {
-				log.Errorf("MonitorChain - commit header failed.")
-				continue
-			} else if commitHeaderResult == 0 {
-				backtrace = 1
-				this.header4sync = make([][]byte, 0)
-				continue
-			} else {
-				latestHeight := this.findLastestHeight()
-				if latestHeight == 0 {
-					continue
-				}
-				this.currentHeight = latestHeight - backtrace
-				backtrace++
-				log.Errorf("MonitorChain - back to height: %d", this.currentHeight)
-				this.header4sync = make([][]byte, 0)
+			if blockHandleResult && len(this.header4sync) > 0 {
+				this.commitHeader()
 			}
 		case <-this.exitChan:
 			return
@@ -262,12 +250,17 @@ func (this *EthereumManager) handleNewBlock(height uint64) bool {
 }
 
 func (this *EthereumManager) handleBlockHeader(height uint64) bool {
-	header, err := tools.GetNodeHeader(this.config.ETHConfig.RestURL, this.restClient, height)
+	hdr, err := this.client.HeaderByNumber(context.Background(), big.NewInt(int64(height)))
 	if err != nil {
 		log.Errorf("handleBlockHeader - GetNodeHeader on height :%d failed", height)
 		return false
 	}
-	this.header4sync = append(this.header4sync, header)
+	rawHdr, _ := hdr.MarshalJSON()
+	raw, _ := this.polySdk.GetStorage(autils.HeaderSyncContractAddress.ToHexString(),
+		append(append([]byte(scom.MAIN_CHAIN), autils.GetUint64Bytes(this.config.ETHConfig.SideChainId)...), autils.GetUint64Bytes(height)...))
+	if len(raw) == 0 || !bytes.Equal(raw, hdr.Hash().Bytes()) {
+		this.header4sync = append(this.header4sync, rawHdr)
+	}
 	return true
 }
 
@@ -319,6 +312,15 @@ func (this *EthereumManager) fetchLockDepositEvents(height uint64, client *ethcl
 				continue
 			}
 		}
+		param := &common2.MakeTxParam{}
+		_ = param.Deserialization(common.NewZeroCopySource([]byte(evt.Rawdata)))
+		raw, _ := this.polySdk.GetStorage(autils.CrossChainManagerContractAddress.ToHexString(),
+			append(append([]byte(cross_chain_manager.DONE_TX), autils.GetUint64Bytes(this.config.ETHConfig.SideChainId)...), param.CrossChainID...))
+		if len(raw) != 0 {
+			log.Debugf("fetchLockDepositEvents - ccid %s (tx_hash: %s) already on poly",
+				hex.EncodeToString(param.CrossChainID), evt.Raw.TxHash.Hex())
+			continue
+		}
 		index := big.NewInt(0)
 		index.SetBytes(evt.TxId)
 		crossTx := &CrossTransfer{
@@ -347,11 +349,13 @@ func (this *EthereumManager) commitHeader() int {
 		this.polySigner,
 	)
 	if err != nil {
-		log.Warnf("commitHeader - send transaction to poly chain err: %s!", err.Error())
 		errDesc := err.Error()
 		if strings.Contains(errDesc, "get the parent block failed") || strings.Contains(errDesc, "missing required field") {
-			return -1
+			log.Warnf("commitHeader - send transaction to poly chain err: %s", errDesc)
+			this.rollBackToCommAncestor()
+			return 0
 		} else {
+			log.Errorf("commitHeader - send transaction to poly chain err: %s", errDesc)
 			return 1
 		}
 	}
@@ -365,24 +369,45 @@ func (this *EthereumManager) commitHeader() int {
 		}
 	}
 	log.Infof("commitHeader - send transaction %s to poly chain and confirmed on height %d", tx.ToHexString(), h)
+	this.header4sync = make([][]byte, 0)
 	return 0
 }
+
+func (this *EthereumManager) rollBackToCommAncestor() {
+	for ; ; this.currentHeight-- {
+		raw, err := this.polySdk.GetStorage(autils.HeaderSyncContractAddress.ToHexString(),
+			append(append([]byte(scom.MAIN_CHAIN), autils.GetUint64Bytes(this.config.ETHConfig.SideChainId)...), autils.GetUint64Bytes(this.currentHeight)...))
+		if len(raw) == 0 || err != nil {
+			continue
+		}
+		hdr, err := this.client.HeaderByNumber(context.Background(), big.NewInt(int64(this.currentHeight)))
+		if err != nil {
+			log.Errorf("rollBackToCommAncestor - failed to get header by number, so we wait for one second to retry: %v", err)
+			time.Sleep(time.Second)
+			this.currentHeight++
+		}
+		if bytes.Equal(hdr.Hash().Bytes(), raw) {
+			log.Infof("rollBackToCommAncestor - find the common ancestor: %s(number: %d)", hdr.Hash().String(), this.currentHeight)
+			break
+		}
+	}
+	this.header4sync = make([][]byte, 0)
+}
+
 func (this *EthereumManager) MonitorDeposit() {
-	monitorTicker := time.NewTicker(config.ETH_MONITOR_INTERVAL)
+	monitorTicker := time.NewTicker(time.Duration(this.config.ETHConfig.MonitorInterval) * time.Second)
 	for {
 		select {
 		case <-monitorTicker.C:
 			height, err := tools.GetNodeHeight(this.config.ETHConfig.RestURL, this.restClient)
 			if err != nil {
-				log.Infof("MonitorChain - cannot get node height, err: %s", err)
+				log.Infof("MonitorDeposit - cannot get eth node height, err: %s", err)
 				time.Sleep(time.Second * 10)
 				continue
 			}
 			snycheight := this.findLastestHeight()
-			if snycheight > height-config.ETH_PROOF_USERFUL_BLOCK {
-				// try to handle deposit event when we are at latest height
-				this.handleLockDepositEvents(snycheight)
-			}
+			log.Log.Info("MonitorDeposit from eth - snyced eth height", snycheight, "eth height", height, "diff", height-snycheight)
+			this.handleLockDepositEvents(snycheight)
 		case <-this.exitChan:
 			return
 		}
@@ -479,7 +504,7 @@ func (this *EthereumManager) parserValue(value []byte) []byte {
 	return txHash
 }
 func (this *EthereumManager) CheckDeposit() {
-	checkTicker := time.NewTicker(config.ETH_MONITOR_INTERVAL)
+	checkTicker := time.NewTicker(time.Duration(this.config.ETHConfig.MonitorInterval) * time.Second)
 	for {
 		select {
 		case <-checkTicker.C:
