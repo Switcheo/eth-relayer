@@ -16,7 +16,7 @@ cd eth_relayer
 go build -o eth_relayer main.go
 ```
 
-After building the source code successfully,  you should see the executable program `eth_relayer`. 
+After building the source code successfully,  you should see the executable program `eth_relayer`.
 
 ### Build Docker Image
 
@@ -42,8 +42,8 @@ Before running, you need feed the configuration file `config.json`.
   },
   "ETHConfig":{
     "SideChainId": 2, // ethereum chainID
-    "RestURL":"http://etheruem:port", // your ethereum node 
-    "ECCMContractAddress":"ethereum_cross_chain_contract", 
+    "RestURL":"http://etheruem:port", // your ethereum node
+    "ECCMContractAddress":"ethereum_cross_chain_contract",
     "ECCDContractAddress":"ethereum_cross_chain_data_contract",
     "KeyStorePath": "./keystore", // path to store your ethereum wallet
     "KeyStorePwdSet": { // password to protect your ethereum wallet
@@ -52,6 +52,7 @@ Before running, you need feed the configuration file `config.json`.
     },
     "BlockConfig": 12, // blocks to confirm a ethereum tx
     "HeadersPerBatch": 500, // number of poly headers commited to ECCM in one transaction at most
+    "MaxGasPrice": 500, // max gas price in gwei to use for txns that are broadcasted to eth chain
     "MonitorInterval": 3 // seconds of ticker to monitor eth chain
   },
   "BoltDbPath": "./db", // DB path
@@ -69,10 +70,10 @@ Before running, you need feed the configuration file `config.json`.
 
 After that, make sure you already have a ethereum wallet with ETH. The wallet file is like `UTC--2020-08-17T03-44-00.191825735Z--0xd12e...54ccacf91ca364d` and you can use [geth](https://github.com/ethereum/go-ethereum) to create one( `./geth accounts add` ). Put it under `KeyStorePath`. You can create more than one wallet for relayer. Relayer will send transactions concurrently by different accounts.
 
-Now, you can start relayer as follow: 
+Now, you can start relayer as follow:
 
 ```shell
-./eth_relayer --cliconfig=./config.json 
+./eth_relayer --cliconfig=./config.json
 ```
 
 It will generate logs under `./Log` and check relayer status by view log file.
