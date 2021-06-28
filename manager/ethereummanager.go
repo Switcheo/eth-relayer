@@ -246,7 +246,7 @@ func (this *EthereumManager) handleNewBlock(height uint64) bool {
 }
 
 func (this *EthereumManager) handleBlockHeader(height uint64) bool {
-	hdr, err := this.client.HeaderByNumber(context.Background(), big.NewInt(int64(height)))
+	hdr, err := tools.GetNodeHeader(this.config.ETHConfig.RestURL, this.restClient, height)
 	if err != nil {
 		log.Errorf("handleBlockHeader - GetNodeHeader on height :%d failed", height)
 		return false
