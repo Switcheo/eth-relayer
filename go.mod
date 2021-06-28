@@ -16,5 +16,4 @@ require (
 	github.com/urfave/cli v1.22.4
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
-	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 )
