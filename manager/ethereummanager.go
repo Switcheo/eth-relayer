@@ -371,9 +371,11 @@ func (this *EthereumManager) commitHeader() int {
 
 func (this *EthereumManager) rollBackToCommAncestor() {
 	for ; ; this.currentHeight-- {
+		log.Tracef("rollBackToCommAncestor - trying height: %d", this.currentHeight)
 		raw, err := this.polySdk.GetStorage(autils.HeaderSyncContractAddress.ToHexString(),
 			append(append([]byte(scom.MAIN_CHAIN), autils.GetUint64Bytes(this.config.ETHConfig.SideChainId)...), autils.GetUint64Bytes(this.currentHeight)...))
 		if len(raw) == 0 || err != nil {
+			log.Tracef("rollBackToCommAncestor - failed to get height")
 			continue
 		}
 		hdr, err := this.client.HeaderByNumber(context.Background(), big.NewInt(int64(this.currentHeight)))
@@ -382,6 +384,8 @@ func (this *EthereumManager) rollBackToCommAncestor() {
 			time.Sleep(time.Second)
 			this.currentHeight++
 		}
+		log.Tracef("rollBackToCommAncestor - got header with hash: %x", hdr.Hash().Bytes())
+		log.Tracef("rollBackToCommAncestor - expect hdr with hash: %x", raw)
 		if bytes.Equal(hdr.Hash().Bytes(), raw) {
 			log.Infof("rollBackToCommAncestor - find the common ancestor: %s(number: %d)", hdr.Hash().String(), this.currentHeight)
 			break
