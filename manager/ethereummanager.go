@@ -378,14 +378,14 @@ func (this *EthereumManager) rollBackToCommAncestor() {
 			log.Tracef("rollBackToCommAncestor - failed to get height")
 			continue
 		}
-		hdr, err := this.client.HeaderByNumber(context.Background(), big.NewInt(int64(this.currentHeight)))
+		hdr, err := tools.GetNodeHeader(this.config.ETHConfig.RestURL, this.restClient, this.currentHeight)
 		if err != nil {
 			log.Errorf("rollBackToCommAncestor - failed to get header by number, so we wait for one second to retry: %v", err)
 			time.Sleep(time.Second)
 			this.currentHeight++
 		}
-		log.Tracef("rollBackToCommAncestor - got header with hash: %x", hdr.Hash().Bytes())
-		log.Tracef("rollBackToCommAncestor - expect hdr with hash: %x", raw)
+		log.Tracef("rollBackToCommAncestor - curr eth header with hash: %x", hdr.Hash().Bytes())
+		log.Tracef("rollBackToCommAncestor - got poly header with hash: %x", raw)
 		if bytes.Equal(hdr.Hash().Bytes(), raw) {
 			log.Infof("rollBackToCommAncestor - find the common ancestor: %s(number: %d)", hdr.Hash().String(), this.currentHeight)
 			break
