@@ -381,6 +381,7 @@ type EthSender struct {
 func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	log.Infof("sendTxToEth")
 
+	originalGasPrice := *info.gasPrice
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 
 	for {
@@ -421,6 +422,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 		signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
+			info.gasPrice = &originalGasPrice
 			return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
 		}
 
@@ -429,6 +431,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 		err = this.ethClient.SendTransaction(context.Background(), signedtx)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
+			info.gasPrice = &originalGasPrice
 			return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
 		}
 		hash := signedtx.Hash()
@@ -437,7 +440,6 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 			hash.String(), nonce, info.polyTxHash, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
 		time.Sleep(time.Second * 10)
 	}
-	return nil
 }
 
 func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, param *common2.ToMerkleValue, headerProof string, anchorHeader *polytypes.Header, polyTxHash string, rawAuditPath []byte) bool {
@@ -512,8 +514,10 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 		this.cmap[k] = c
 		go func() {
 			for v := range c {
-				if err = this.sendTxToEth(v); err != nil {
+				err = this.sendTxToEth(v)
+				for err != nil {
 					log.Errorf("failed to send tx to ethereum: error: %v, txData: %s", err, hex.EncodeToString(v.txData))
+					err = this.sendTxToEth(v)
 				}
 			}
 		}()

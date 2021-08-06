@@ -241,6 +241,7 @@ func (this *EthereumManager) handleNewBlock(height uint64) bool {
 	ret = this.fetchLockDepositEvents(height, this.client)
 	if !ret {
 		log.Errorf("handleNewBlock - fetchLockDepositEvents on height :%d failed", height)
+		return false
 	}
 	return true
 }
