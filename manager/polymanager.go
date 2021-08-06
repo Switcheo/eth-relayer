@@ -517,6 +517,7 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 				err = this.sendTxToEth(v)
 				for err != nil {
 					log.Errorf("failed to send tx to ethereum: error: %v, txData: %s", err, hex.EncodeToString(v.txData))
+					time.Sleep(time.Second * 10)
 					err = this.sendTxToEth(v)
 				}
 			}
