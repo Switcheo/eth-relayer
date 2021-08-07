@@ -381,9 +381,33 @@ type EthSender struct {
 func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	log.Infof("sendTxToEth")
 
-	originalGasPrice := *info.gasPrice
+	// gas estimation loop
+	var gasPrice *big.Int
+	var gasLimit uint64
+	for {
+		gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
+		if err != nil {
+			log.Errorf("sendTxToEth - get suggest gas price failed error: %s", err.Error())
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		callMsg := ethereum.CallMsg{
+			From: this.acc.Address, To: &info.contractAddr, Gas: 0, GasPrice: gasPrice,
+			Value: big.NewInt(0), Data: info.txData,
+		}
+		gasLimit, err = this.ethClient.EstimateGas(context.Background(), callMsg)
+		if err != nil {
+			log.Errorf("sendTxToEth - estimate gas limit error: %s", err.Error())
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		break
+	}
+
+	// choose a single nonce for the tx
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 
+	// acceleration loop
 	for {
 		accountNonce, err := this.ethClient.NonceAt(context.Background(), this.acc.Address, nil)
 		if err != nil {
@@ -393,7 +417,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 		}
 		if accountNonce > nonce {
 			log.Infof("sendTxToEth - accountNonce >= nonce: %d, %d", accountNonce, nonce)
-			return nil
+			return nil // already sent
 		}
 		suggestedPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 		if err != nil {
@@ -401,38 +425,32 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 			time.Sleep(time.Second * 10)
 			continue
 		}
-		price := info.gasPrice
-		if suggestedPrice.Cmp(price) == 1 {
-			price = suggestedPrice
+		if suggestedPrice.Cmp(gasPrice) == 1 {
+			gasPrice = suggestedPrice
 		}
-		price.Mul(price, big.NewInt(112)) // increase gas price by 12%, miners will reject lower increments
-		price.Div(price, big.NewInt(100))
+		gasPrice.Mul(gasPrice, big.NewInt(112)) // increase gas price by 12%, miners will reject lower increments
+		gasPrice.Div(gasPrice, big.NewInt(100))
 		maxPrice := big.NewInt(this.config.ETHConfig.MaxGasPrice)
 		multiplier := big.NewInt(10)
 		multiplier.Exp(multiplier, big.NewInt(9), nil)
 		maxPrice.Mul(maxPrice, multiplier)
 
-		if price.Cmp(maxPrice) == 1 {
-			price = maxPrice
+		if gasPrice.Cmp(maxPrice) == 1 {
+			gasPrice = maxPrice
 		}
 
-		info.gasPrice = price
-
-		tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), info.gasLimit, info.gasPrice, info.txData)
+		tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), gasLimit, gasPrice, info.txData)
 		signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-			info.gasPrice = &originalGasPrice
-			return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
+			return fmt.Errorf("sendTxToEth - sign raw tx error and return nonce %d: %v", nonce, err)
 		}
 
 		log.Infof("sendTxToEth - sending tx")
-
 		err = this.ethClient.SendTransaction(context.Background(), signedtx)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-			info.gasPrice = &originalGasPrice
-			return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
+			return fmt.Errorf("sendTxToEth - send transaction error and return nonce %d: %v\n", nonce, err)
 		}
 		hash := signedtx.Hash()
 
@@ -491,21 +509,7 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 		return false
 	}
 
-	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
-	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - get suggest gas price failed error: %s", err.Error())
-		return false
-	}
 	contractaddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCMContractAddress)
-	callMsg := ethereum.CallMsg{
-		From: this.acc.Address, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
-		Value: big.NewInt(0), Data: txData,
-	}
-	gasLimit, err := this.ethClient.EstimateGas(context.Background(), callMsg)
-	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - estimate gas limit error: %s", err.Error())
-		return false
-	}
 
 	k := this.getRouter()
 	c, ok := this.cmap[k]
@@ -527,8 +531,6 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 	c <- &EthTxInfo{
 		txData:       txData,
 		contractAddr: contractaddr,
-		gasPrice:     gasPrice,
-		gasLimit:     gasLimit,
 		polyTxHash:   polyTxHash,
 	}
 	return true
@@ -631,8 +633,6 @@ func (this *EthSender) waitTransactionConfirm(polyTxHash string, hash ethcommon.
 
 type EthTxInfo struct {
 	txData       []byte
-	gasLimit     uint64
-	gasPrice     *big.Int
 	contractAddr ethcommon.Address
 	polyTxHash   string
 }
