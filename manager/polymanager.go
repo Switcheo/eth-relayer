@@ -378,14 +378,14 @@ type EthSender struct {
 	contractAbi  *abi.ABI
 }
 
-func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
+func (this *EthSender) sendTxToEth(info *EthTxInfo) (err error) {
 	log.Infof("sendTxToEth")
 
 	// gas estimation loop
 	var gasPrice *big.Int
 	var gasLimit uint64
 	for {
-		gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
+		gasPrice, err = this.ethClient.SuggestGasPrice(context.Background())
 		if err != nil {
 			log.Errorf("sendTxToEth - get suggest gas price failed error: %s", err.Error())
 			time.Sleep(time.Second * 10)
