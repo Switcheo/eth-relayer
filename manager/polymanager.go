@@ -397,6 +397,10 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) (err error) {
 		}
 		gasLimit, err = this.ethClient.EstimateGas(context.Background(), callMsg)
 		if err != nil {
+			if strings.Contains(err.Error(), "execution reverted: the transaction has been executed") {
+				// ignore if tx is already committed
+				return nil
+			}
 			log.Errorf("sendTxToEth - estimate gas limit error: %s", err.Error())
 			time.Sleep(time.Second * 10)
 			continue
