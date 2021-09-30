@@ -246,7 +246,7 @@ func (this *PolyManager) handleDepositEvents(height uint32) bool {
 	isCurr := lastEpoch < height+1
 	isEpoch, pubkList, err := this.IsEpoch(hdr)
 	if err != nil {
-		log.Errorf("falied to check isEpoch: %v", err)
+		log.Errorf("failed to check isEpoch: %v", err)
 		return false
 	}
 	var (
@@ -319,13 +319,13 @@ func (this *PolyManager) handleDepositEvents(height uint32) bool {
 				}
 				cnt++
 				sender := this.selectSender()
-				log.Infof("sender %s is handling poly tx ( hash: %s, height: %d )",
+				log.Infof("handleDepositEvents - sender %s is handling poly tx ( hash: %s, height: %d )",
 					sender.acc.Address.String(), event.TxHash, height)
-				// temporarily ignore the error for tx
-				sender.commitDepositEventsWithHeader(hdr, param, hp, anchor, event.TxHash, auditpath)
-				//if !sender.commitDepositEventsWithHeader(hdr, param, hp, anchor, event.TxHash, auditpath) {
-				//	return false
-				//}
+
+				if !sender.commitDepositEventsWithHeader(hdr, param, hp, anchor, event.TxHash, auditpath) {
+					log.Errorf("handleDepositEvents - retry entire block due to failed commit for poly tx hash: %s", event.TxHash)
+					return false
+				}
 			}
 		}
 	}
@@ -493,13 +493,16 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 	}
 	fromTx := [32]byte{}
 	copy(fromTx[:], param.TxHash[:32])
-	res, _ := eccd.CheckIfFromChainTxExist(nil, param.FromChainID, fromTx)
+	res, err := eccd.CheckIfFromChainTxExist(nil, param.FromChainID, fromTx)
+	if err != nil {
+		log.Errorf("commitDepositEventsWithHeader CheckIfFromChainTxExist - err:" + err.Error())
+		return false
+	}
 	if res {
 		log.Infof("already relayed to eth: ( from_chain_id: %d, from_txhash: %x,  param.Txhash: %x)",
 			param.FromChainID, param.TxHash, param.MakeTxParam.TxHash)
 		return true
 	}
-	//log.Infof("poly proof with header, height: %d, key: %s, proof: %s", header.Height-1, string(key), proof.AuditPath)
 
 	rawProof, _ := hex.DecodeString(headerProof)
 	var rawAnchor []byte
@@ -509,7 +512,7 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 	headerData = header.GetMessage()
 	txData, err := this.contractAbi.Pack("verifyHeaderAndExecuteTx", rawAuditPath, headerData, rawProof, rawAnchor, sigs)
 	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - err:" + err.Error())
+		log.Errorf("commitDepositEventsWithHeader verifyHeaderAndExecuteTx - err:" + err.Error())
 		return false
 	}
 
