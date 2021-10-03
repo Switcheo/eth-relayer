@@ -140,19 +140,13 @@ func (this *PolyManager) findLatestHeight() uint32 {
 }
 
 func (this *PolyManager) init() bool {
-	if this.currentHeight > 0 {
-		log.Infof("PolyManager init - start height from flag: %d", this.currentHeight)
+	dbHeight := this.db.GetPolyHeight()
+	if dbHeight > this.currentHeight {
+		this.currentHeight = dbHeight
+		log.Infof("PolyManager init - latest height from DB: %d", this.currentHeight)
 		return true
 	}
-	this.currentHeight = this.db.GetPolyHeight()
-	latestHeight := this.findLatestHeight()
-	if latestHeight > this.currentHeight {
-		this.currentHeight = latestHeight
-		log.Infof("PolyManager init - latest height from ECCM: %d", this.currentHeight)
-		return true
-	}
-	log.Infof("PolyManager init - latest height from DB: %d", this.currentHeight)
-
+	log.Infof("PolyManager init - latest height from flag: %d", this.currentHeight)
 	return true
 }
 
