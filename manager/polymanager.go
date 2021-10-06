@@ -376,31 +376,8 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) (err error) {
 	log.Infof("sendTxToEth")
 
 	// gas estimation loop
-	var gasPrice *big.Int
 	var gasLimit uint64
-	for {
-		gasPrice, err = this.ethClient.SuggestGasPrice(context.Background())
-		if err != nil {
-			log.Errorf("sendTxToEth - get suggest gas price failed error: %s", err.Error())
-			time.Sleep(time.Second * 10)
-			continue
-		}
-		callMsg := ethereum.CallMsg{
-			From: this.acc.Address, To: &info.contractAddr, Gas: 0, GasPrice: gasPrice,
-			Value: big.NewInt(0), Data: info.txData,
-		}
-		gasLimit, err = this.ethClient.EstimateGas(context.Background(), callMsg)
-		if err != nil {
-			if strings.Contains(err.Error(), "execution reverted: the transaction has been executed") {
-				// ignore if tx is already committed
-				return nil
-			}
-			log.Errorf("sendTxToEth - estimate gas limit error: %s", err.Error())
-			time.Sleep(time.Second * 10)
-			continue
-		}
-		break
-	}
+	gasPrice := big.NewInt(0)
 
 	// choose a single nonce for the tx
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
@@ -409,18 +386,18 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) (err error) {
 	for {
 		accountNonce, err := this.ethClient.NonceAt(context.Background(), this.acc.Address, nil)
 		if err != nil {
-			log.Errorf("sendTxToEth - get accountNonce error: %v", err)
-			time.Sleep(time.Second * 10)
+			log.Errorf("sendTxToEth [%s] - get accountNonce error: %v", info.polyTxHash, err)
+			time.Sleep(time.Second * 3)
 			continue
 		}
 		if accountNonce > nonce {
-			log.Infof("sendTxToEth - accountNonce >= nonce: %d, %d", accountNonce, nonce)
+			log.Infof("sendTxToEth [%s] - accountNonce >= nonce: %d, %d", info.polyTxHash, accountNonce, nonce)
 			return nil // already sent
 		}
 		suggestedPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 		if err != nil {
-			log.Errorf("sendTxToEth - get suggestedGasPrice error: %v", err)
-			time.Sleep(time.Second * 10)
+			log.Errorf("sendTxToEth [%s] - get suggest gas price failed with error: %v", info.polyTxHash, err)
+			time.Sleep(time.Second * 3)
 			continue
 		}
 		if suggestedPrice.Cmp(gasPrice) == 1 {
@@ -437,24 +414,47 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) (err error) {
 			gasPrice = maxPrice
 		}
 
+		callMsg := ethereum.CallMsg{
+			From: this.acc.Address, To: &info.contractAddr, Gas: 0, GasPrice: gasPrice,
+			Value: big.NewInt(0), Data: info.txData,
+		}
+
+		if gasLimit == 0 {
+			gasLimit, err = this.ethClient.EstimateGas(context.Background(), callMsg)
+			if err != nil {
+				if strings.Contains(err.Error(), "execution reverted: the transaction has been executed") {
+					// ignore if tx is already committed
+					return nil
+				}
+				log.Errorf("sendTxToEth [%s] - estimate gas limit error: %s", info.polyTxHash, err.Error())
+				time.Sleep(time.Second * 3)
+				continue
+			}
+		}
+
 		tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), gasLimit, gasPrice, info.txData)
 		signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
 		if err != nil {
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-			return fmt.Errorf("sendTxToEth - sign raw tx error and return nonce %d: %v", nonce, err)
+			return fmt.Errorf("sendTxToEth [%s] - sign raw tx error and return nonce %d: %v", info.polyTxHash, nonce, err)
 		}
 
-		log.Infof("sendTxToEth - sending tx")
+		log.Infof("sendTxToEth [%s] - sending tx", info.polyTxHash)
 		err = this.ethClient.SendTransaction(context.Background(), signedtx)
 		if err != nil {
+			if strings.Contains(err.Error(), "already known") {
+				log.Errorf("sendTxToEth [%s] - send transaction mempool error: %v", err)
+				time.Sleep(time.Second * 3)
+				continue
+			}
 			this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-			return fmt.Errorf("sendTxToEth - send transaction error and return nonce %d: %v\n", nonce, err)
+			return fmt.Errorf("sendTxToEth [%s] - send transaction error and return nonce %d: %v\n", info.polyTxHash, nonce, err)
 		}
 		hash := signedtx.Hash()
 
-		log.Infof("relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s, eth_explorer: %s)",
-			hash.String(), nonce, info.polyTxHash, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
-		time.Sleep(time.Second * 10)
+		log.Infof("sendTxToEth [%s] - relayed tx to ethereum: (eth_hash: %s, nonce: %d, eth_explorer: %s)",
+			info.polyTxHash, hash.String(), nonce, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
+		time.Sleep(time.Second * 20)
 	}
 }
 
