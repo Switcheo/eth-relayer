@@ -406,9 +406,9 @@ func (this *EthereumManager) MonitorDeposit() {
 				time.Sleep(time.Second * 10)
 				continue
 			}
-			snycheight := this.findLastestHeight()
-			log.Log.Info("MonitorDeposit from eth - snyced eth height", snycheight, "eth height", height, "diff", height-snycheight)
-			this.handleLockDepositEvents(snycheight)
+			syncheight := this.findLastestHeight()
+			log.Log.Info("MonitorDeposit from eth - synced eth height", syncheight, "eth height", height, "diff", height-syncheight)
+			this.handleLockDepositEvents(syncheight)
 		case <-this.exitChan:
 			return
 		}
@@ -419,6 +419,7 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 	if err != nil {
 		return fmt.Errorf("handleLockDepositEvents - this.db.GetAllRetry error: %s", err)
 	}
+	log.Infof("handleLockDepositEvents - handling %d events", len(retryList))
 	for _, v := range retryList {
 		time.Sleep(time.Second * 1)
 		crosstx := new(CrossTransfer)
@@ -431,10 +432,12 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 		key := crosstx.txIndex
 		keyBytes, err := eth.MappingKeyAt(key, "01")
 		if err != nil {
-			log.Errorf("handleLockDepositEvents - MappingKeyAt error:%s\n", err.Error())
+			log.Errorf("handleLockDepositEvents - MappingKeyAt error: %s\n", err.Error())
 			continue
 		}
 		if refHeight <= crosstx.height+this.config.ETHConfig.BlockConfig {
+			log.Infof("handleLockDepositEvents - waiting for %d blocks confirmation from: %d, now: %d\n",
+				this.config.ETHConfig.BlockConfig, crosstx.height, refHeight)
 			continue
 		}
 		height := int64(refHeight - this.config.ETHConfig.BlockConfig)
