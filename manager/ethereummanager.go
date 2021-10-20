@@ -333,7 +333,7 @@ func (this *EthereumManager) fetchLockDepositEvents(height uint64, client *ethcl
 		if err != nil {
 			log.Errorf("fetchLockDepositEvents - this.db.PutRetry error: %s", err)
 		}
-		log.Infof("fetchLockDepositEvent -  height: %d", height)
+		log.Infof("fetchLockDepositEvent - height: %d", height)
 	}
 	return true
 }
@@ -432,11 +432,11 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 		key := crosstx.txIndex
 		keyBytes, err := eth.MappingKeyAt(key, "01")
 		if err != nil {
-			log.Errorf("handleLockDepositEvents - MappingKeyAt error: %s\n", err.Error())
+			log.Errorf("handleLockDepositEvents - MappingKeyAt error: %s", err.Error())
 			continue
 		}
 		if refHeight <= crosstx.height+this.config.ETHConfig.BlockConfig {
-			log.Infof("handleLockDepositEvents - waiting for %d blocks confirmation from: %d, now: %d\n",
+			log.Infof("handleLockDepositEvents - waiting for %d blocks confirmation from: %d, now: %d",
 				this.config.ETHConfig.BlockConfig, crosstx.height, refHeight)
 			continue
 		}
@@ -450,6 +450,7 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 			continue
 		}
 		//3. commit proof to poly
+		log.Infof("handleLockDepositEvents - commiting proof for %s", crosstx.txId)
 		txHash, err := this.commitProof(uint32(height), proof, crosstx.value, crosstx.txId)
 		if err != nil {
 			if strings.Contains(err.Error(), "chooseUtxos, current utxo is not enough") {
@@ -467,6 +468,7 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 				continue
 			}
 		}
+		log.Infof("handleLockDepositEvents - commitProof poly tx hash is %s", txHash)
 		//4. put to check db for checking
 		err = this.db.PutCheck(txHash, v)
 		if err != nil {
@@ -476,7 +478,6 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 		if err != nil {
 			log.Errorf("handleLockDepositEvents - this.db.PutCheck error: %s", err)
 		}
-		log.Infof("handleLockDepositEvents - syncProofToAlia txHash is %s", txHash)
 	}
 	return nil
 }
