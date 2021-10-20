@@ -450,23 +450,19 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 			continue
 		}
 		//3. commit proof to poly
-		log.Infof("handleLockDepositEvents - commiting proof for %s", crosstx.txId)
+		ethTxnHash := ethcommon.BytesToHash(crosstx.txId).String()
+		log.Infof("handleLockDepositEvents - commiting proof for %s", ethTxnHash)
 		txHash, err := this.commitProof(uint32(height), proof, crosstx.value, crosstx.txId)
 		if err != nil {
-			if strings.Contains(err.Error(), "chooseUtxos, current utxo is not enough") {
-				log.Infof("handleLockDepositEvents - invokeNativeContract error: %s", err)
-				continue
-			} else {
+			if strings.Contains(err.Error(), "tx already done") {
+				log.Infof("handleLockDepositEvents - eth txn hash %s already on poly", ethTxnHash)
 				if err := this.db.DeleteRetry(v); err != nil {
 					log.Errorf("handleLockDepositEvents - this.db.DeleteRetry error: %s", err)
 				}
-				if strings.Contains(err.Error(), "tx already done") {
-					log.Debugf("handleLockDepositEvents - eth_tx %s already on poly", ethcommon.BytesToHash(crosstx.txId).String())
-				} else {
-					log.Errorf("handleLockDepositEvents - invokeNativeContract error for eth_tx %s: %s", ethcommon.BytesToHash(crosstx.txId).String(), err)
-				}
-				continue
+			} else {
+				log.Errorf("handleLockDepositEvents - commitProof error for eth txn hash %s: %s", ethTxnHash, err)
 			}
+			continue
 		}
 		log.Infof("handleLockDepositEvents - commitProof poly tx hash is %s", txHash)
 		//4. put to check db for checking
