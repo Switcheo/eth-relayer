@@ -284,6 +284,10 @@ func (this *EthereumManager) fetchLockDepositEvents(height uint64, client *ethcl
 
 	for events.Next() {
 		evt := events.Event
+		if evt.Sender == ethcommon.HexToAddress("0xA093017e86854387C3562d8626340d5760660a73") {
+			log.Infof("Skipping 0xA093017e86854387C3562d8626340d5760660a73")
+			continue
+		}
 		var isTarget bool
 		if len(this.config.TargetContracts) > 0 {
 			toContractStr := evt.ProxyOrAssetContract.String()
@@ -309,6 +313,7 @@ func (this *EthereumManager) fetchLockDepositEvents(height uint64, client *ethcl
 				continue
 			}
 		}
+
 		param := &common2.MakeTxParam{}
 		_ = param.Deserialization(common.NewZeroCopySource([]byte(evt.Rawdata)))
 		raw, _ := this.polySdk.GetStorage(autils.CrossChainManagerContractAddress.ToHexString(),
